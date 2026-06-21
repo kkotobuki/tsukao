@@ -1,56 +1,54 @@
-# Welcome to your Expo app 👋
+# ツカオ
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**将来が見えると、今を楽しめる。**
 
-## Get started
+ツカオは、**将来のお金の不安で「使えない」人**に、現在地と将来の見通しを見せて、**「今、経験にお金を使っていい」という余裕（安心）を返す** 将来家計シミュレータです。
 
-1. Install dependencies
+## なぜつくるか
 
-   ```bash
-   npm install
-   ```
+将来が漠然と不安だと、人は財布を締めて、今しかできない経験にお金を使えなくなる。でも見通しを立てれば「**実はもう足りている／使っても大丈夫**」と気づけることが多い。ツカオは、アプリが「使え」と命令するのではなく、**本人が自分の未来を見て「使っても大丈夫だ」と自分に許可を出せる**ようにする。
 
-2. Start the app
+- **届け先**: まず開発者本人（将来不安が強く、お金の心配が中心）。そして同じ悩みを持つ Z 世代へ。
+- **やらないこと**: 他人との比較（順位・percentile・スコア）。煽らない。
 
-   ```bash
-   npx expo start
-   ```
+## 特徴
 
-In the output, you'll find options to open the app in a
+- **自己参照的充足**: 「他人より上か」ではなく「**自分はこの未来で満足か**」を問う。順位・スコアは出さない
+- **現在価値で計算**: 物価（インフレ）は扱わず、すべて「今の円」で表す。昇給率・運用利回りは実質
+- **平均一本線（決定論）**: 確率分岐はせず、平均値で1本の見通しを描く。直感的で出所を追える
+- **what-if サンドボックス**: 入力（年収・支出・住居プラン・ライフイベント・投資）をいじると未来が即引き直される
+- **体感変換**: 退職時資産を「**今の生活費なら◯年分**」に翻訳して、余裕を実感できる形で提示
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## 技術構成
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+| 層 | 採用 |
+|---|---|
+| フロント | Expo（React Native / TypeScript）モバイルアプリ |
+| 計算コア | 端末内の純 TypeScript（決定論・外部依存なし。`src/core/simulation`） |
+| データ | Notion（前提値＝読み／ユーザーデータ＝書き） |
+| AI 相談（将来） | Anthropic API 直叩き（薄い抽象） |
 
-## Get a fresh project
+v1 は「読む＋計算＋what-if」を端末内で完結でき、**保存・AI 相談を足す段で初めて中継（サーバ）が要る**。
 
-When you're ready, run:
+## 開発
 
 ```bash
-npm run reset-project
+pnpm install        # 依存インストール
+pnpm start          # 開発サーバ（i=iOS / a=Android / w=Web）
+pnpm typecheck      # 型チェック（tsc --noEmit）
+pnpm lint           # Lint
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## ディレクトリ
 
-### Other setup steps
+```
+src/app/             画面（Expo Router・ファイルベース）
+src/core/simulation/ シミュレーション計算コア（純関数・型）
+ADR/                 アーキテクチャ決定記録（なぜそうしたか）
+SPEC.md              実装仕様書（何を作るか）
+CLAUDE.md            プロジェクト規約（AI 自律化ハーネス）
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## ステータス
 
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+開発中（v1）。設計判断は `ADR/`、実装仕様は `SPEC.md` を参照。

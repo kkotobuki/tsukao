@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "lifegps_scaffold",
-    "slug": "lifegps_scaffold",
+    "name": "ツカオ",
+    "slug": "tsukao",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "lifegpsscaffold",
+    "scheme": "tsukao",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
