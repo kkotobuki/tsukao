@@ -52,7 +52,7 @@ export const SNAPSHOT: Snapshot = {
     { id: 'parentcare', name: '親の介護', category: '家族・関係', calcKind: '毎年支出', annualMan: 63.6, oneTimeMan: 47.2, durationYears: 5 },
     { id: 'pet_dog', name: 'ペット飼育(犬)', category: '家族・関係', calcKind: '毎年支出', annualMan: 41.4, oneTimeMan: null, durationYears: 15 },
     { id: 'pet_cat', name: 'ペット飼育(猫)', category: '家族・関係', calcKind: '毎年支出', annualMan: 17.8, oneTimeMan: null, durationYears: 15 },
-    { id: 'house', name: '住宅購入(持ち家)', category: '住まい・モノ', calcKind: '毎年支出', annualMan: 210, oneTimeMan: 620, durationYears: 35 },
+    { id: 'house', name: '住宅購入(持ち家)', category: '住まい・モノ', calcKind: '毎年支出', annualMan: 40, oneTimeMan: 620, durationYears: 35 },
     { id: 'move', name: '住み替え・引っ越し', category: '住まい・モノ', calcKind: '手入力', annualMan: null, oneTimeMan: 10, durationYears: null },
     { id: 'car', name: '自動車購入・保有', category: '住まい・モノ', calcKind: '毎年支出', annualMan: 16.7, oneTimeMan: null, durationYears: null },
     { id: 'second_house', name: 'セカンドハウス・別荘', category: '住まい・モノ', calcKind: '毎年支出', annualMan: 50, oneTimeMan: null, durationYears: null },

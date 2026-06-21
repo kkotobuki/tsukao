@@ -128,6 +128,44 @@ export function simulate(
       : assumptions.pensionKoseiAnnualYen;
   const partTimeAnnualYen = input.retirementPartTimeYen ?? 0;
   const minimumLivingCostAnnualYen = assumptions.minimumLivingCostRetirementYen;
+
+  // 退職後の資産推移(チャート用)。最低生活費で取り崩し、年金＋パートで賄い、不足は貯蓄から。
+  // もしも(大病・介護施設など退職後イベント)も反映。死ぬ年齢は入力しないので、
+  // 資金が尽きる or 100歳で打ち切る(尽きる年を1つ見せて終了)。
+  const CHART_CAP_AGE = 100;
+  for (let age = retirementAge; age <= CHART_CAP_AGE; age++) {
+    const netIncomeYen = pensionAnnualYen + partTimeAnnualYen;
+    const consumptionYen = minimumLivingCostAnnualYen;
+    const ev = sumEventCosts(scenario.events, age);
+    const investmentReturnYen = investedYen * assumptions.realInvestmentReturnRate;
+    investedYen += investmentReturnYen;
+    let yearCashYen = cashYen + netIncomeYen - consumptionYen - ev.eventAnnualYen - ev.eventOneTimeYen;
+    let withdrawnYen = 0;
+    if (yearCashYen < 0) {
+      withdrawnYen = Math.min(-yearCashYen, investedYen);
+      yearCashYen += withdrawnYen;
+      investedYen -= withdrawnYen;
+    }
+    cashYen = yearCashYen;
+    const assetsYen = cashYen + investedYen;
+    years.push({
+      age,
+      grossIncomeYen: 0,
+      netIncomeYen,
+      consumptionYen,
+      eventAnnualYen: ev.eventAnnualYen,
+      eventOneTimeYen: ev.eventOneTimeYen,
+      annualInvestmentYen: 0,
+      investmentReturnYen,
+      withdrawnYen,
+      investedYen,
+      netFlowYen:
+        netIncomeYen - consumptionYen - ev.eventAnnualYen - ev.eventOneTimeYen + investmentReturnYen,
+      assetsYen,
+    });
+    if (assetsYen < 0) break;
+  }
+
   // 退職後に置いたイベント(介護・大病等)は退職時貯蓄から先に差し引く
   const retirementEventsCostYen = sumRetirementEventsCost(scenario.events, retirementAge, N);
   const savingsForRetirementYen = assetsAtRetirementYen - retirementEventsCostYen;
