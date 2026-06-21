@@ -185,8 +185,9 @@ export default function Home() {
 
         {showDetail && (
           <View style={styles.detailBox}>
-            <Segmented label="投資する" options={['しない', 'する']} value={invest ? 'する' : 'しない'} onChange={(v) => setInvest(v === 'する')} />
-            {invest && <Stepper label="毎月の投資額" value={monthlyInvestMan} unit="万円" onChange={setMonthlyInvestMan} />}
+            <Segmented label="積立投資する" options={['しない', 'する']} value={invest ? 'する' : 'しない'} onChange={(v) => setInvest(v === 'する')} />
+            {invest && <Stepper label="毎月の積立額" value={monthlyInvestMan} unit="万円" onChange={setMonthlyInvestMan} />}
+            {invest && <Text style={styles.minHint}>退職まで毎月コツコツ積み立て、実質利回り約2.5%で複利運用する想定です。</Text>}
 
             <Segmented label="住まい" options={['賃貸', '購入', '持ち家']} value={housing} onChange={(v) => setHousing(v as Housing)} />
             {housing !== '持ち家' && <Stepper label="今の家賃" value={rentMan} unit="万/月" onChange={setRentMan} />}

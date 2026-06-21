@@ -150,7 +150,7 @@ export function simulate(
     const assetsYen = cashYen + investedYen;
     years.push({
       age,
-      grossIncomeYen: 0,
+      grossIncomeYen: netIncomeYen, // 退職後の年収＝年金＋パート（v1は年金非課税扱いで額面≈手取り）
       netIncomeYen,
       consumptionYen,
       eventAnnualYen: ev.eventAnnualYen,
