@@ -7,10 +7,10 @@ import type {
   YearProjection,
 } from './types';
 
-/** 退職年齢の既定値(ADR: 退職タイミングのデフォルトは要検討) */
+/** 退職年齢の既定値 */
 export const DEFAULT_RETIREMENT_AGE = 65;
-/** 試算の終端年齢の既定値 */
-export const DEFAULT_END_AGE = 95;
+/** 退職後に貯蓄を使う年数 N の既定値(SPEC §4.3) */
+export const DEFAULT_YEARS_TO_SPEND_SAVINGS = 30;
 
 /**
  * 平均一本線シミュレーション(純粋関数・現在価値)。
@@ -30,34 +30,32 @@ export function simulate(
   scenario: Scenario,
   assumptions: Assumptions,
 ): SimulationResult {
-  const { currentAge, retirementAge, endAge } = input;
+  const { currentAge, retirementAge } = input;
+  const N = input.yearsToSpendSavings ?? DEFAULT_YEARS_TO_SPEND_SAVINGS;
   const baseConsumptionYen = resolveBaseConsumptionYen(input, assumptions);
   const housingPlan = input.housingPlan ?? { kind: '賃貸' };
   const currentRentYen = input.currentRentYen ?? 0;
-  const retirementPartTimeYen = input.retirementPartTimeYen ?? 0;
   const realBaseUpRate = assumptions.realBaseUpRate ?? 0;
   const marriageIncrementYen = assumptions.marriageIncrementYen ?? 0;
-  // 消費の年齢カーブは現在年齢=1.0 に正規化する(SPEC §3.3)
+  // 年齢カーブは現在年齢=1.0 に正規化する(消費・収入とも。SPEC §3.3)
   const consumptionLevelAtCurrent = assumptions.consumptionLevelByAge(currentAge) || 1;
+  const incomeLevelAtCurrent = assumptions.realIncomeCurve(currentAge) || 1;
 
   const years: YearProjection[] = [];
-  // 2ポット管理(案②): 現金 と 投資。総資産 = cashYen + investedYen。
-  // 初期資産はすべて現金として持つ(既存の投資残高は v1 では扱わない)。
+  // 2ポット管理: 現金 と 投資。総資産 = cashYen + investedYen。初期資産はすべて現金。
   let cashYen = input.currentAssetsYen;
   let investedYen = 0;
 
-  for (let age = currentAge; age <= endAge; age++) {
-    const retired = age >= retirementAge;
-
-    // 1. 収入(額面 → 手取り)。実質昇給カーブ＋実質ベースアップで伸ばす。退職後は年金＋パート。
-    const grossIncomeYen = retired
-      ? 0
-      : input.grossAnnualIncomeYen *
-        assumptions.realIncomeCurve(age) *
-        Math.pow(1 + realBaseUpRate, age - currentAge);
-    const netIncomeYen = retired
-      ? assumptions.pensionAnnualYen + retirementPartTimeYen
-      : assumptions.grossToNetYen(grossIncomeYen);
+  // 現役の年次ループ: 現在年齢 → 退職年齢の前年まで(SPEC §4.2)。退職後は §4.3 の閉じた式へ
+  for (let age = currentAge; age < retirementAge; age++) {
+    // 1. 収入(額面 → 手取り)。実質昇給カーブ＋実質ベースアップで伸ばす
+    const grossIncomeYen =
+      input.grossAnnualIncomeYen *
+      (assumptions.realIncomeCurve(age) / incomeLevelAtCurrent) *
+      Math.pow(1 + realBaseUpRate, age - currentAge);
+    let netIncomeYen = assumptions.grossToNetYen(grossIncomeYen);
+    // 手取り率表は40歳未満前提。40歳以上は介護保険(本人分)を追加控除
+    if (age >= 40) netIncomeYen -= grossIncomeYen * (assumptions.kaigoInsuranceRateOver40 ?? 0);
 
     // 2. 基本消費 = 現在水準 × 年齢カーブ係数(現在年齢=1.0) − 家賃置換 ＋ 結婚増分(SPEC §3.3)
     const ageFactor = assumptions.consumptionLevelByAge(age) / consumptionLevelAtCurrent;
@@ -120,20 +118,75 @@ export function simulate(
     });
   }
 
-  const finalAssetsYen = cashYen + investedYen;
-  const assetsAtRetirementYen =
-    years.find((y) => y.age === retirementAge)?.assetsYen ?? finalAssetsYen;
-  const assetsAtEndYen = years.at(-1)?.assetsYen ?? finalAssetsYen;
+  // 退職時貯蓄(現役ループ最終の総資産)
+  const assetsAtRetirementYen = cashYen + investedYen;
+
+  // 退職後(N年レバー・閉じた式。SPEC §4.3。死ぬ年齢は入力しない)
+  const pensionAnnualYen =
+    input.pensionType === '国民年金のみ'
+      ? assumptions.pensionKokuminAnnualYen
+      : assumptions.pensionKoseiAnnualYen;
+  const partTimeAnnualYen = input.retirementPartTimeYen ?? 0;
+  const minimumLivingCostAnnualYen = assumptions.minimumLivingCostRetirementYen;
+  // 退職後に置いたイベント(介護・大病等)は退職時貯蓄から先に差し引く
+  const retirementEventsCostYen = sumRetirementEventsCost(scenario.events, retirementAge, N);
+  const savingsForRetirementYen = assetsAtRetirementYen - retirementEventsCostYen;
+  const savingsPerYearYen = N > 0 ? savingsForRetirementYen / N : 0;
+  const annualFreeSpendingYen =
+    pensionAnnualYen + partTimeAnnualYen + savingsPerYearYen - minimumLivingCostAnnualYen;
 
   return {
     years,
     assetsAtRetirementYen,
-    assetsAtEndYen,
-    // 体感変換: 退職時資産 ÷ 年間生活費 = 何年分
+    // 体感変換: 退職時貯蓄 ÷ 年間生活費 = 何年分
     retirementYearsOfLivingCost:
       baseConsumptionYen > 0 ? assetsAtRetirementYen / baseConsumptionYen : 0,
-    depletionAge: years.find((y) => y.assetsYen < 0)?.age ?? null,
+    retirement: {
+      pensionAnnualYen,
+      partTimeAnnualYen,
+      minimumLivingCostAnnualYen,
+      yearsN: N,
+      retirementEventsCostYen,
+      savingsPerYearYen,
+      annualFreeSpendingYen,
+    },
   };
+}
+
+/**
+ * 退職後(startAge >= retirementAge)に置いたイベントの総コスト(円)。退職時貯蓄から先に差し引く(SPEC §4.3)。
+ * 毎年支出/手入力は 年額×継続年数(無期限なら N 年分)＋初期費用、一回スポットは初期費用。収入転換・運用は除く。
+ */
+function sumRetirementEventsCost(events: PlacedEvent[], retirementAge: number, N: number): number {
+  let total = 0;
+  for (const ev of events) {
+    if (ev.startAge < retirementAge) continue;
+    const count = ev.count ?? 1;
+    const oneTime = (ev.oneTimeOverrideYen ?? ev.def.oneTimeYen ?? 0) * count;
+    switch (ev.def.calcKind) {
+      case '一回スポット':
+        total += oneTime;
+        break;
+      case '毎年支出':
+      case '手入力': {
+        const schedule = ev.def.scheduleYen;
+        let annualTotal: number;
+        if (schedule && schedule.length > 0) {
+          annualTotal = schedule.reduce((a, b) => a + b, 0) * count;
+        } else {
+          const annual = (ev.annualOverrideYen ?? ev.def.annualYen ?? 0) * count;
+          const yearsRun = ev.def.durationYears ?? N; // 無期限は退職後 N 年分とみなす
+          annualTotal = annual * yearsRun;
+        }
+        total += oneTime + annualTotal;
+        break;
+      }
+      case '収入転換':
+      case '運用':
+        break;
+    }
+  }
+  return total;
 }
 
 /**
@@ -150,7 +203,8 @@ function resolveBaseConsumptionYen(input: SimulationInput, assumptions: Assumpti
       return Math.max(0, currentNetYen - input.monthlySavingsYen * 12);
     }
     case 'average':
-      return assumptions.baseAnnualConsumptionYen;
+      // 全年齢平均でなく、現在年齢に対応する単身平均(年代別カーブ)を基準にする(二重計上回避)
+      return assumptions.consumptionLevelByAge(input.currentAge) * 12;
     case 'explicit':
       return Math.max(0, basis.annualYen);
   }

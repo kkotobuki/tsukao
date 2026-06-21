@@ -103,10 +103,12 @@ export interface SimulationInput {
   currentAssetsYen: number;
   /** 毎月の貯蓄額(円) — 現状のグラウンドトゥルース */
   monthlySavingsYen: number;
-  /** 退職年齢(任意・既定は DEFAULT_RETIREMENT_AGE) */
+  /** 退職年齢(既定 DEFAULT_RETIREMENT_AGE)。現役の年次ループはこの年齢で止める */
   retirementAge: number;
-  /** 試算の終端年齢(任意・既定は DEFAULT_END_AGE) */
-  endAge: number;
+  /** 年金の種類(未指定なら '厚生年金')。受給額が決まる(SPEC §3.7) */
+  pensionType?: '国民年金のみ' | '厚生年金';
+  /** 退職後に貯蓄を使う年数 N(自由入力レバー・既定 DEFAULT_YEARS_TO_SPEND_SAVINGS)。死ぬ年齢は入力しない */
+  yearsToSpendSavings?: number;
   /** 基本消費の出どころ(未指定なら { kind: 'fromSavings' }) */
   consumptionBasis?: ConsumptionBasis;
   /** 現在の世帯パターン(未指定なら '単身')。将来の結婚は marriage イベントで足す */
@@ -122,8 +124,8 @@ export interface SimulationInput {
 /** 前提値(Notion 由来。すべて実質・現在価値) */
 export interface Assumptions {
   /**
-   * 年齢 → その年齢の実質年収係数(現在の年収を 1.0 とした相対カーブ)。
-   * 例: 現在30歳=1.0, 45歳=1.3 のような昇給カーブ(賃金センサス由来・実質)。
+   * 年齢 → その年齢の実質年収水準(賃金センサス由来)。絶対値でよい。
+   * simulate が現在年齢で正規化する: 係数 = realIncomeCurve(age) / realIncomeCurve(currentAge)。
    */
   realIncomeCurve: (age: number) => number;
   /** 単身ベースの年間消費(円・現在価値)。家計調査由来 */
@@ -136,14 +138,20 @@ export interface Assumptions {
   consumptionLevelByAge: (age: number) => number;
   /** 実質運用利回り(例: 0.03 = 年3%) */
   realInvestmentReturnRate: number;
+  /** 40歳以上に追加控除する介護保険(本人分・対額面の率)。手取り率表が40歳未満前提のための補正。既定0 */
+  kaigoInsuranceRateOver40?: number;
   /** 実質ベースアップ率(物価超の実質賃上げ・年率)。既定0(省略可) */
   realBaseUpRate?: number;
   /** 結婚増分(円/年)。結婚(marriage)イベント発生後に消費へ加算。夫婦のみ−単身 */
   marriageIncrementYen?: number;
   /** 額面年収(円) → 手取り(円) 変換(所得税・住民税・社会保険料を控除) */
   grossToNetYen: (grossYen: number) => number;
-  /** 退職後の公的年金(年額・円・現在価値) */
-  pensionAnnualYen: number;
+  /** 国民年金 平均(年額・円・現在価値) */
+  pensionKokuminAnnualYen: number;
+  /** 厚生年金 平均(年額・円・現在価値) */
+  pensionKoseiAnnualYen: number;
+  /** 退職後の最低生活費(年額・円・現在価値)。SPEC §3.7 ≈14.9万/月×12 */
+  minimumLivingCostRetirementYen: number;
 }
 
 /** 1年分の試算結果 */
@@ -163,14 +171,25 @@ export interface YearProjection {
 }
 
 /** シミュレーション全体の結果 */
+/** 退職後の出力(SPEC §4.3 N年レバー・閉じた式) */
+export interface RetirementOutput {
+  pensionAnnualYen: number; // 年金 年額(種類別)
+  partTimeAnnualYen: number; // 退職後パート 年額
+  minimumLivingCostAnnualYen: number; // 退職後の最低生活費 年額
+  yearsN: number; // 貯蓄を使う年数 N
+  retirementEventsCostYen: number; // 退職後に置いたイベント(介護・大病等)の総コスト
+  savingsPerYearYen: number; // (退職時貯蓄 − 退職後イベント) ÷ N
+  /** 退職後の年間自由支出 = 年金 + パート + 退職時貯蓄/N − 最低生活費。>0 なら余裕 */
+  annualFreeSpendingYen: number;
+}
+
 export interface SimulationResult {
+  /** 現役期(現在年齢〜退職年齢)の年次推移 */
   years: YearProjection[];
-  /** 退職時点の資産(円) */
+  /** 退職時貯蓄(現役ループ最終の総資産) */
   assetsAtRetirementYen: number;
-  /** 終端年齢時点の資産(円) */
-  assetsAtEndYen: number;
-  /** 体感変換: 退職時資産が「今の年間生活費の何年分」か(ADR: 自己参照的充足) */
+  /** 体感変換: 退職時貯蓄が「今の年間生活費の何年分」か(ADR: 自己参照的充足) */
   retirementYearsOfLivingCost: number;
-  /** 資金が尽きる(総資産が初めてマイナスになる)年齢。最後まで尽きなければ null */
-  depletionAge: number | null;
+  /** 退職後(N年レバーの閉じた式) */
+  retirement: RetirementOutput;
 }
