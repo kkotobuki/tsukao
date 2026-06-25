@@ -131,6 +131,11 @@ export interface Assumptions {
   /** 単身ベースの年間消費(円・現在価値)。家計調査由来 */
   baseAnnualConsumptionYen: number;
   /**
+   * 非住居の基本消費のうち「必須(固定費)」とみなす割合(0〜1)。ADR: 固定費線。
+   * 固定費 = 住居費(家賃/ローン) + (基本消費 − 住居費) × この割合。残りが「自由に使えるお金」。
+   */
+  necessityRatioOfNonHousing: number;
+  /**
    * 年齢別の消費水準(相対値)。SPEC §3.3/C-1 の消費増加率カーブ(単身・実質)。
    * simulate は現在年齢で正規化して係数化する: 係数(age) = level(age)/level(currentAge)。
    * 例: 現役ほぼ一定 → 60歳で約-14% → 65歳以降 約-0.6%/年。
@@ -160,6 +165,7 @@ export interface YearProjection {
   grossIncomeYen: number; // 額面収入(退職後は0)
   netIncomeYen: number; // 手取り(退職後は年金)
   consumptionYen: number; // 基本消費
+  fixedCostYen: number; // 基本消費のうち必須(固定費)分=住居費＋(非住居×必須比率)。consumptionとの差が自由に使えるお金
   eventAnnualYen: number; // イベントの毎年支出合計
   eventOneTimeYen: number; // イベントの一回費用(その年に発生した分)
   annualInvestmentYen: number; // その年に実際に投資ポットへ移した額(現金が許す範囲)

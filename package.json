@@ -5,6 +5,7 @@
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
     "@expo/ui": "0.2.0-canary-20260121-a63c0dd",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~54.0.35",
     "expo-constants": "~18.0.13",
     "expo-device": "~8.0.10",
@@ -32,6 +33,10 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.17",
+    "eslint": "^9.39.4",
+    "eslint-config-expo": "~10.0.0",
+    "sharp": "^0.35.2",
+    "tsx": "^4.22.4",
     "typescript": "~5.9.3"
   },
   "scripts": {
@@ -41,7 +46,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "private": true
 }

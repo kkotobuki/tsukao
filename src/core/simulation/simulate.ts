@@ -69,6 +69,15 @@ export function simulate(
     }
     consumptionYen = Math.max(0, consumptionYen);
 
+    // 2.5 固定費(必須分): 住居費 ＋ (非住居消費 × 必須比率)。consumptionとの差が「自由に使えるお金」
+    const fixedCostYen = fixedCostForYear(
+      consumptionYen,
+      housingPlan,
+      currentRentYen,
+      age,
+      assumptions.necessityRatioOfNonHousing,
+    );
+
     // 3. イベント費用 ＋ 住居プランの費用(購入後のローン＋維持・頭金)
     const events = sumEventCosts(scenario.events, age);
     const housing = housingCostForYear(housingPlan, age);
@@ -107,6 +116,7 @@ export function simulate(
       grossIncomeYen,
       netIncomeYen,
       consumptionYen,
+      fixedCostYen,
       eventAnnualYen,
       eventOneTimeYen,
       annualInvestmentYen,
@@ -153,6 +163,7 @@ export function simulate(
       grossIncomeYen: netIncomeYen, // 退職後の年収＝年金＋パート（v1は年金非課税扱いで額面≈手取り）
       netIncomeYen,
       consumptionYen,
+      fixedCostYen: consumptionYen, // 退職後は最低生活費=全額が必須(固定費線は消費線に重なる)
       eventAnnualYen: ev.eventAnnualYen,
       eventOneTimeYen: ev.eventOneTimeYen,
       annualInvestmentYen: 0,
@@ -189,6 +200,52 @@ export function simulate(
       annualFreeSpendingYen,
     },
   };
+}
+
+/**
+ * 「今の生活に月いくらまで上乗せできるか」(円/月)を解く。SPEC §5.6 の核＝"今を楽しむ許可"。
+ *
+ * 不安で過剰節約する本人に返すべきは「退職後いくら」ではなく「今、毎月いくら増やして使ってよいか」。
+ * 現役期の毎月支出を Δ 増やしても退職後の最低生活が守れる(annualFreeSpendingYen ≥ 0)上限 Δ を、
+ * simulate を再評価しながら二分探索で求める(モデルは変えない)。基準消費の出どころ
+ * (fromSavings/average/explicit)に依らず、解決後の年額に上乗せ分を足して評価する。
+ *
+ * 戻り値は月額(円)。既に退職後が最低生活すら賄えない(余裕<0)場合は 0(=今は上乗せ余地なし→打ち手側へ)。
+ */
+export function solvePresentMonthlyHeadroomYen(
+  input: SimulationInput,
+  scenario: Scenario,
+  assumptions: Assumptions,
+): number {
+  // 現役期間が無い(すでに退職)/ 貯蓄を使う年数 N<=0 だと、退職後の自由支出が「今の支出」に依存せず
+  // 解が定まらない(freeAt が一定)。二分探索が成立しないので、上乗せ余地は出さない(0)。
+  const N = input.yearsToSpendSavings ?? DEFAULT_YEARS_TO_SPEND_SAVINGS;
+  if (input.currentAge >= input.retirementAge || N <= 0) return 0;
+
+  const baseAnnualYen = resolveBaseConsumptionYen(input, assumptions);
+  const freeAt = (extraAnnualYen: number): number =>
+    simulate(
+      { ...input, consumptionBasis: { kind: 'explicit', annualYen: baseAnnualYen + extraAnnualYen } },
+      scenario,
+      assumptions,
+    ).retirement.annualFreeSpendingYen;
+
+  if (freeAt(0) < 0) return 0; // 既に退職後が不足 → 今は上乗せ余地なし
+
+  // 余裕が負に転じる上乗せ額(hi)を探す。手取り or 基準消費を足場に、足りなければ倍々で拡張(上限ガード)
+  let hi = Math.max(assumptions.grossToNetYen(input.grossAnnualIncomeYen), baseAnnualYen, 1);
+  for (let i = 0; i < 40 && freeAt(hi) >= 0; i++) hi *= 2;
+  // 40回倍にしても負にならない＝今の支出にほぼ非依存。天文学的な値を返さず 0 にする(ブラケット不成立)。
+  if (freeAt(hi) >= 0) return 0;
+
+  // 二分探索: free ≥ 0 を保つ最大の上乗せ年額
+  let lo = 0;
+  for (let i = 0; i < 32; i++) {
+    const mid = (lo + hi) / 2;
+    if (freeAt(mid) >= 0) lo = mid;
+    else hi = mid;
+  }
+  return lo / 12; // 月額(円)に変換
 }
 
 /**
@@ -329,6 +386,39 @@ function housingCostForYear(
     annualYen: withinLoan ? plan.annualCostYen : 0,
     oneTimeYen: age === plan.buyAge ? plan.downPaymentYen : 0,
   };
+}
+
+/**
+ * その年の基本消費(consumptionYen)を「必須(固定費)」と「自由」に割り、固定費分を返す(ADR: 固定費線)。
+ *   固定費 = 住居費(消費に含まれる家賃) ＋ (基本消費 − 住居費) × 必須比率
+ * 住居費の扱い(二重計上回避):
+ *   - 賃貸: 家賃は consumptionYen に含まれる → currentRentYen を住居費分とする
+ *   - 購入: 購入前は家賃あり、購入後は consumptionYen から家賃が除かれる(=住居費分0。ローンはイベント側)
+ *   - 持ち家: 家賃なし(住居費分0)
+ * 自由に使えるお金 = consumptionYen − 固定費。
+ */
+function fixedCostForYear(
+  consumptionYen: number,
+  plan: NonNullable<SimulationInput['housingPlan']>,
+  currentRentYen: number,
+  age: number,
+  necessityRatio: number,
+): number {
+  let housingInsideYen: number;
+  switch (plan.kind) {
+    case '賃貸':
+      housingInsideYen = currentRentYen;
+      break;
+    case '購入':
+      housingInsideYen = age < plan.buyAge ? currentRentYen : 0;
+      break;
+    case '持ち家':
+      housingInsideYen = 0;
+      break;
+  }
+  housingInsideYen = Math.min(Math.max(0, housingInsideYen), consumptionYen);
+  const nonHousingYen = consumptionYen - housingInsideYen;
+  return housingInsideYen + nonHousingYen * necessityRatio;
 }
 
 /**

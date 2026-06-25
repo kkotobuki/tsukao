@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Line, Polyline, Rect, Svg, Text as SvgText } from 'react-native-svg';
+import { Line, Polygon, Polyline, Rect, Svg, Text as SvgText } from 'react-native-svg';
 
 export interface Series {
   label: string;
@@ -9,17 +9,29 @@ export interface Series {
   kind?: 'line' | 'bar';
 }
 
+/** 2系列(upper/lower)の間を塗る帯。例: 消費〜固定費の差＝「自由に使えるお金」 */
+export interface Band {
+  upper: number[];
+  lower: number[];
+  color: string;
+  opacity?: number;
+  /** 凡例に出すラベル（省略時は凡例に出さない） */
+  label?: string;
+}
+
 /** 年次の折れ線グラフ(svg)。複数系列を同一スケールで重ねて描く */
 export function LineChart({
   series,
   xLabels,
   width = 320,
   height = 180,
+  bands = [],
 }: {
   series: Series[];
   xLabels: string[];
   width?: number;
   height?: number;
+  bands?: Band[];
 }) {
   const pad = { l: 44, r: 6, t: 10, b: 18 };
   const w = width - pad.l - pad.r;
@@ -62,6 +74,18 @@ export function LineChart({
           </SvgText>
         ))}
         <Line x1={pad.l} y1={y(0)} x2={pad.l + w} y2={y(0)} stroke="#33405c" strokeWidth={1} />
+        {bands.map((bd, bi) => {
+          const up = bd.upper.map((v, i) => `${x(i)},${y(v)}`);
+          const lo = bd.lower.map((v, i) => `${x(i)},${y(v)}`).reverse();
+          return (
+            <Polygon
+              key={`band-${bi}`}
+              points={[...up, ...lo].join(' ')}
+              fill={bd.color}
+              opacity={bd.opacity ?? 0.18}
+            />
+          );
+        })}
         {series
           .filter((s) => s.kind === 'bar')
           .flatMap((s) => {
@@ -97,6 +121,14 @@ export function LineChart({
             <Text style={styles.legendText}>{s.label}</Text>
           </View>
         ))}
+        {bands
+          .filter((bd) => bd.label)
+          .map((bd, bi) => (
+            <View key={`bl-${bi}`} style={styles.legendItem}>
+              <View style={[styles.swatch, { backgroundColor: bd.color, opacity: (bd.opacity ?? 0.18) + 0.15 }]} />
+              <Text style={styles.legendText}>{bd.label}</Text>
+            </View>
+          ))}
       </View>
     </View>
   );
@@ -106,6 +138,7 @@ const styles = StyleSheet.create({
   legend: { flexDirection: 'row', gap: 14, marginTop: 8, flexWrap: 'wrap' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dot: { width: 10, height: 10, borderRadius: 5 },
+  swatch: { width: 14, height: 10, borderRadius: 2 },
   legendText: { color: '#9fb0cc', fontSize: 12 },
   xrow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
   xlabel: { color: '#6f80a0', fontSize: 11 },

@@ -4,6 +4,7 @@
 # 出力先: ~/.claude/session-log.txt
 
 INPUT=$(cat)              # stdin は先頭で1度だけ取り込むこと
+source "$(dirname "$0")/lib/pending_todos.sh"
 
 LOG_FILE="$HOME/.claude/session-log.txt"
 
@@ -14,17 +15,9 @@ LOG_FILE="$HOME/.claude/session-log.txt"
   echo "uncommitted:           $(git status --porcelain 2>/dev/null | wc -l | tr -d ' ') files"
   echo "commits-this-session:  $(git log --since='3 hours ago' --oneline 2>/dev/null | wc -l | tr -d ' ')"
 
-  # 未完了 TODO 件数を Claude Code の tasks ストレージから取得
+  # 未完了 TODO 件数を共通ライブラリで取得
   SID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
-  PENDING=0
-  TASKS_DIR="$HOME/.claude/tasks/$SID"
-  if [ -n "$SID" ] && [ -d "$TASKS_DIR" ]; then
-    for f in "$TASKS_DIR"/*.json; do
-      [ -f "$f" ] || continue
-      st=$(jq -r '.status // empty' "$f" 2>/dev/null)
-      case "$st" in pending|in_progress) PENDING=$((PENDING+1));; esac
-    done
-  fi
+  PENDING=$(count_pending_todos "$SID")
   [ "$PENDING" -gt 0 ] && echo "pending-todos:         ${PENDING}"
 
   echo ""
