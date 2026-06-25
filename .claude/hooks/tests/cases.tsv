@@ -1,0 +1,32 @@
+# pre_tool_use.sh のガード回帰テストケース (TAB 区切り 3 列: 期待exit / ラベル / 入力JSON)
+# 期待exit: 2=ブロックされるべき / 0=通すべき
+# 危険文字列を「コマンド」ではなく「データ」として置くことで、ハーネス自身のガードに
+# 検査・ブロックされず実行できる (直書きすると pre_tool_use がテスト実行ごとブロックする)。
+#
+# --- 危険系: ブロック (exit 2) されるべき ---
+2	rm 再帰強制 (-rf)	{"tool_name":"Bash","tool_input":{"command":"rm -rf build"}}
+2	rm 再帰強制 (-fr 順逆)	{"tool_name":"Bash","tool_input":{"command":"rm -fr build"}}
+2	rm 再帰強制 (-r -f 分割)	{"tool_name":"Bash","tool_input":{"command":"rm -r -f build"}}
+2	rm 再帰強制 (-rfv)	{"tool_name":"Bash","tool_input":{"command":"rm -rfv build"}}
+2	sudo rm -rf	{"tool_name":"Bash","tool_input":{"command":"sudo rm -rf /tmp/x"}}
+2	.env 読取 (cat)	{"tool_name":"Bash","tool_input":{"command":"cat .env"}}
+2	.env 読込 (source)	{"tool_name":"Bash","tool_input":{"command":"source .env"}}
+2	全環境変数表示 (printenv)	{"tool_name":"Bash","tool_input":{"command":"printenv"}}
+2	シークレット表示 (printenv KEY)	{"tool_name":"Bash","tool_input":{"command":"printenv API_KEY"}}
+2	echo シークレット	{"tool_name":"Bash","tool_input":{"command":"echo $API_KEY"}}
+2	printf シークレット	{"tool_name":"Bash","tool_input":{"command":"printf %s $DB_PASSWORD"}}
+2	curl 認証ヘッダ	{"tool_name":"Bash","tool_input":{"command":"curl -H \"Authorization: Bearer x\" https://a"}}
+2	curl Basic 認証	{"tool_name":"Bash","tool_input":{"command":"curl -u user:pass https://a"}}
+2	.env ファイル Read	{"tool_name":"Read","tool_input":{"file_path":"/x/.env"}}
+2	.env.local ファイル Write	{"tool_name":"Write","tool_input":{"file_path":"/x/.env.local"}}
+#
+# --- 安全系: 通す (exit 0) べき (過剰ブロックの回帰検出) ---
+0	rm 単純削除 (-rf なし)	{"tool_name":"Bash","tool_input":{"command":"rm build.txt"}}
+0	ls	{"tool_name":"Bash","tool_input":{"command":"ls -la"}}
+0	grep -rf (rm ではない)	{"tool_name":"Bash","tool_input":{"command":"grep -rf pattern src"}}
+0	curl 認証なし	{"tool_name":"Bash","tool_input":{"command":"curl https://example.com"}}
+0	curl 変数を URL に (echo せず)	{"tool_name":"Bash","tool_input":{"command":"curl $API_URL/health"}}
+0	通常ファイル Read	{"tool_name":"Read","tool_input":{"file_path":"/x/src/app.ts"}}
+0	通常ファイル cat	{"tool_name":"Bash","tool_input":{"command":"cat README.md"}}
+0	echo 平文	{"tool_name":"Bash","tool_input":{"command":"echo hello"}}
+0	git status	{"tool_name":"Bash","tool_input":{"command":"git status"}}

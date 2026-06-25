@@ -83,6 +83,7 @@ check_required ".claude/settings.json 存在" test -f .claude/settings.json
 check_required ".claude/settings.json hooks 7種類設定" bash -c 'jq -e ".hooks | .UserPromptSubmit and .PreToolUse and .PostToolUse and .Stop and .SessionStart and .SessionEnd and .PreCompact" .claude/settings.json'
 check_required ".claude/hooks/ 7ファイル存在" bash -c '[ "$(ls .claude/hooks/*.sh 2>/dev/null | wc -l | tr -d " \n")" -ge 7 ]'
 check_required ".claude/hooks/ 実行権限あり" test -x .claude/hooks/user_prompt_submit.sh
+check_required ".claude/hooks/ ガード回帰テスト pass" bash .claude/hooks/tests/run.sh
 
 echo ""
 echo "[任意項目]"

@@ -75,6 +75,7 @@ export function buildAssumptions(s: Snapshot): Assumptions {
   return {
     realIncomeCurve,
     baseAnnualConsumptionYen: s.baseConsumptionSingleMan * MAN,
+    necessityRatioOfNonHousing: s.necessityRatioOfNonHousing,
     consumptionLevelByAge,
     realInvestmentReturnRate: s.realReturnRatePct / 100,
     kaigoInsuranceRateOver40: s.kaigoSelfRatePct / 100,
