@@ -65,8 +65,8 @@ export function RouteMap({
     <View style={[styles.card, { width, height: H }]}>
       <Svg width={width} height={H} style={StyleSheet.absoluteFill}>
         {/* 道の縁取り＋本体（Maps の道路風） */}
-        <Path d={d} stroke="#c4d2ea" strokeWidth={11} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        <Path d={d} stroke="#5a8def" strokeWidth={5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <Path d={d} stroke="#cdeae3" strokeWidth={11} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <Path d={d} stroke="#14b8a6" strokeWidth={5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
       </Svg>
       {nodes.map((n, i) => {
         const cx = xOf(i);
@@ -97,10 +97,10 @@ export function RouteMap({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#eef2f8',
+    backgroundColor: '#f1f8f5',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#dde4ef',
+    borderColor: '#dcebe5',
     position: 'relative',
   },
   pinWrap: { position: 'absolute', width: 28, height: 28 },
@@ -110,19 +110,19 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: '#ffffff',
     borderWidth: 2,
-    borderColor: '#5a8def',
+    borderColor: '#14b8a6',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#1b2a4a',
-    shadowOpacity: 0.18,
+    shadowColor: '#0f5e54',
+    shadowOpacity: 0.16,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
   },
-  pinNow: { borderColor: '#7c5cfc' },
-  pinGoal: { borderColor: '#ff6fb5' },
+  pinNow: { borderColor: '#0ea98e' },
+  pinGoal: { borderColor: '#f59e0b' },
   pinEmoji: { fontSize: 15, lineHeight: 19 },
   label: { position: 'absolute' },
-  labelTitle: { color: '#1b2a4a', fontSize: 14, fontWeight: '800' },
-  labelGoal: { color: '#c23d7b' },
-  labelSub: { color: '#5b6b86', fontSize: 11, marginTop: 1 },
+  labelTitle: { color: '#1f3a34', fontSize: 14, fontWeight: '800' },
+  labelGoal: { color: '#b9760a' },
+  labelSub: { color: '#5b7068', fontSize: 11, marginTop: 1 },
 });
