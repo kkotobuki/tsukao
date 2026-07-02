@@ -3,10 +3,9 @@
  * SPEC §6.1 のビルド時スナップショットを、純関数で simulate の入力に橋渡しする。
  */
 
+import { MAN } from '../format';
 import type { Assumptions, LifeEventDef } from '../simulation/types';
 import type { EventRow, Snapshot } from './snapshot';
-
-const MAN = 10000; // 万円 → 円
 
 /** 万円(または null) → 円(または null) */
 const manToYen = (man: number | null | undefined): number | null =>
