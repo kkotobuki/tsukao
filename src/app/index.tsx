@@ -220,10 +220,9 @@ export default function Home() {
 
         {showDetail && (
           <View style={shared.detailBox}>
-            <Accordion icon="📈" title="積立投資" summary={invest ? 'する' : 'しない'} active={invest}>
-              <Segmented label="積立投資する" options={['しない', 'する']} value={invest ? 'する' : 'しない'} onChange={(v) => setInvest(v === 'する')} />
-              {invest && <SliderRow label="毎月の積立額" value={monthlyInvestMan} unit="万円" min={0} max={30} onChange={setMonthlyInvestMan} />}
-              {invest && <Text style={shared.hint}>退職まで毎月コツコツ積み立て、実質利回り約2.5%で複利運用する想定です。</Text>}
+            <Accordion icon="📈" title="積立投資" summary={invest ? 'する' : 'しない'} active={invest} expanded={invest} onToggle={setInvest}>
+              <SliderRow label="毎月の積立額" value={monthlyInvestMan} unit="万円" min={0} max={30} onChange={setMonthlyInvestMan} />
+              <Text style={shared.hint}>退職まで毎月コツコツ積み立て、実質利回り約2.5%で複利運用する想定です。閉じると外れます。</Text>
             </Accordion>
 
             <Accordion icon="🏠" title="住まい" summary={housing} active={housing !== '賃貸'}>
@@ -235,7 +234,7 @@ export default function Home() {
             {OPTION_EVENTS.map((ev) => {
               const p = pickOf(ev.id);
               // 入力した瞬間の費用ヒント（ルートと同じ共通フォーマッタ＝表示を一致させる）
-              const costHint = p.on ? eventCadenceLabel(catalog[ev.id], COUNTABLE_EVENT_IDS.has(ev.id) ? p.count : 1) : '';
+              const costHint = eventCadenceLabel(catalog[ev.id], COUNTABLE_EVENT_IDS.has(ev.id) ? p.count : 1);
               return (
                 <Accordion
                   key={ev.id}
@@ -244,12 +243,14 @@ export default function Home() {
                   summary={p.on ? 'あり' : 'なし'}
                   active={p.on}
                   info={ev.note ? (ev.source ? `${ev.note}\n出所: ${ev.source}` : ev.note) : undefined}
+                  // 開いた時点で ON 登録（あり/なしボタンは置かない）。閉じると OFF
+                  expanded={p.on}
+                  onToggle={(o) => setPick(ev.id, { on: o })}
                 >
-                  <Segmented label="つける" options={['なし', 'あり']} value={p.on ? 'あり' : 'なし'} onChange={(v) => setPick(ev.id, { on: v === 'あり' })} />
-                  {p.on && <SliderRow label={ev.calcKind === '一回スポット' ? 'その年齢' : '開始年齢'} value={p.startAge} unit="歳" min={18} max={99} onChange={(n) => setPick(ev.id, { startAge: n })} />}
-                  {p.on && costHint ? <Text style={shared.hint}>{costHint}</Text> : null}
-                  {p.on && ev.annualMan == null && ev.calcKind !== '一回スポット' && <SliderRow label="年額" value={p.amountMan} unit="万/年" min={0} max={100} step={5} onChange={(n) => setPick(ev.id, { amountMan: n })} />}
-                  {p.on && COUNTABLE_EVENT_IDS.has(ev.id) && <SliderRow label="人数・頭数" value={p.count} unit="" min={1} max={10} onChange={(n) => setPick(ev.id, { count: n })} />}
+                  <SliderRow label={ev.calcKind === '一回スポット' ? 'その年齢' : '開始年齢'} value={p.startAge} unit="歳" min={18} max={99} onChange={(n) => setPick(ev.id, { startAge: n })} />
+                  {costHint ? <Text style={shared.hint}>{costHint}</Text> : null}
+                  {ev.annualMan == null && ev.calcKind !== '一回スポット' && <SliderRow label="年額" value={p.amountMan} unit="万/年" min={0} max={100} step={5} onChange={(n) => setPick(ev.id, { amountMan: n })} />}
+                  {COUNTABLE_EVENT_IDS.has(ev.id) && <SliderRow label="人数・頭数" value={p.count} unit="" min={1} max={10} onChange={(n) => setPick(ev.id, { count: n })} />}
                 </Accordion>
               );
             })}

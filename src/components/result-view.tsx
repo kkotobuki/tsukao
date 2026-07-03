@@ -6,7 +6,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } fr
 import { LineChart } from '@/components/line-chart';
 import { RouteMap, type Waypoint } from '@/components/route-map';
 import { Accordion } from '@/components/ui/accordion';
-import { Segmented, SliderRow } from '@/components/ui/inputs';
+import { SliderRow } from '@/components/ui/inputs';
 import { Bg, GradientText, SectionTitle } from '@/components/ui/layout';
 import { C, shared } from '@/components/ui/theme';
 import { SNAPSHOT } from '@/core/data/snapshot';
@@ -193,15 +193,13 @@ export function ResultView({
         <Text style={shared.section}>🧪 もしもの試算</Text>
         <Text style={shared.hint}>未来を見たうえで、起きると大きい出費を試せます。切り替えると上のグラフと数字が変わります。</Text>
         <View style={shared.detailBox}>
-          <Accordion icon="🏥" title="大病をしたら" summary={illness ? '見る' : '—'} active={illness}>
-            <Segmented label="試す" options={['見ない', '見る']} value={illness ? '見る' : '見ない'} onChange={(v) => setIllness(v === '見る')} />
-            <Text style={shared.hint}>{illnessAge}歳で 約{illnessMan}万円 を1回（治療費の自己負担＋療養中の収入減の概算）</Text>
-            {illness && <SliderRow label="その年齢" value={illnessAge} unit="歳" min={18} max={99} onChange={setIllnessAge} />}
+          <Accordion icon="🏥" title="大病をしたら" summary={illness ? '見る' : '—'} active={illness} expanded={illness} onToggle={setIllness}>
+            <Text style={shared.hint}>{illnessAge}歳で 約{illnessMan}万円 を1回（治療費の自己負担＋療養中の収入減の概算）。閉じると外れます。</Text>
+            <SliderRow label="その年齢" value={illnessAge} unit="歳" min={18} max={99} onChange={setIllnessAge} />
           </Accordion>
-          <Accordion icon="🧓" title="介護施設に入ったら" summary={careHome ? '入る' : '—'} active={careHome}>
-            <Segmented label="試す" options={['入らない', '入る']} value={careHome ? '入る' : '入らない'} onChange={(v) => setCareHome(v === '入る')} />
-            <Text style={shared.hint}>{careHomeAge}歳から 年{careMan}万円 × {careDur}年 ＝ 計 約{careMan * careDur}万円（{careDur}年＝平均介護期間 約4年7ヶ月。入居一時金は別途・要手入力）</Text>
-            {careHome && <SliderRow label="入る年齢" value={careHomeAge} unit="歳" min={60} max={99} onChange={setCareHomeAge} />}
+          <Accordion icon="🧓" title="介護施設に入ったら" summary={careHome ? '入る' : '—'} active={careHome} expanded={careHome} onToggle={setCareHome}>
+            <Text style={shared.hint}>{careHomeAge}歳から 年{careMan}万円 × {careDur}年 ＝ 計 約{careMan * careDur}万円（{careDur}年＝平均介護期間 約4年7ヶ月。入居一時金は別途・要手入力）。閉じると外れます。</Text>
+            <SliderRow label="入る年齢" value={careHomeAge} unit="歳" min={60} max={99} onChange={setCareHomeAge} />
           </Accordion>
         </View>
 
