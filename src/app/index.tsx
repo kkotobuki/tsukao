@@ -23,11 +23,10 @@ import { SNAPSHOT } from '@/core/data/snapshot';
 import { MAN } from '@/core/format';
 import {
   DEFAULT_RETIREMENT_AGE,
-  DEFAULT_YEARS_TO_SPEND_SAVINGS,
   simulate,
   solvePresentMonthlyHeadroomYen,
 } from '@/core/simulation/simulate';
-import type { PlacedEvent, Scenario, SimulationInput } from '@/core/simulation/types';
+import type { PlacedEvent, Scenario, Sex, SimulationInput } from '@/core/simulation/types';
 
 const ONBOARD_KEY = 'tsukao:onboarded';
 
@@ -58,12 +57,13 @@ export default function Home() {
   const [reflection, setReflection] = useState<'more' | 'less' | null>(null);
 
   const [age, setAge] = useState(28);
+  // 性別は任意入力。予測寿命(平均余命)の参照に使い、未回答なら男女平均(ADR: spend-down-projection)
+  const [sex, setSex] = useState<'未回答' | Sex>('未回答');
   const [incomeMan, setIncomeMan] = useState(500);
   const [assetsMan, setAssetsMan] = useState(200);
   const [monthlyExpenseMan, setMonthlyExpenseMan] = useState(22);
   const [retirementAge, setRetirementAge] = useState(DEFAULT_RETIREMENT_AGE);
   const [pensionType, setPensionType] = useState<'国民年金のみ' | '厚生年金'>('厚生年金');
-  const [yearsN, setYearsN] = useState(DEFAULT_YEARS_TO_SPEND_SAVINGS);
   const [partTime, setPartTime] = useState(false);
   const [partTimeMan, setPartTimeMan] = useState(100);
 
@@ -103,8 +103,9 @@ export default function Home() {
       currentAssetsYen: assetsMan * MAN,
       monthlySavingsYen: 0,
       retirementAge,
+      sex: sex === '未回答' ? undefined : sex,
+      baseCalendarYear: new Date().getFullYear(), // simulate を実行時刻に依存させない(純粋性の維持)
       pensionType,
-      yearsToSpendSavings: yearsN,
       consumptionBasis: { kind: 'explicit', annualYen: monthlyExpenseMan * 12 * MAN },
       currentRentYen: rentMan * 12 * MAN,
       retirementPartTimeYen: partTime ? partTimeMan * MAN : 0,
@@ -142,7 +143,7 @@ export default function Home() {
     }
     return { result, presentHeadroomMonthlyYen, waypoints };
   }, [
-    age, incomeMan, assetsMan, monthlyExpenseMan, retirementAge, pensionType, yearsN,
+    age, sex, incomeMan, assetsMan, monthlyExpenseMan, retirementAge, pensionType,
     invest, monthlyInvestMan, housing, rentMan, buyAge, picks, partTime, partTimeMan,
     illness, illnessAge, careHome, careHomeAge, assumptions, catalog,
   ]);
@@ -201,13 +202,14 @@ export default function Home() {
 
         <Text style={shared.section}>📍 あなたの現在地</Text>
         <MetricCard icon="🎂" tint="#e8f2fb" label="現在の年齢" value={age} unit="歳" min={18} max={99} onChange={setAge} />
+        <ChoiceCard icon="👤" tint="#eef0f3" label="性別（任意）" options={['未回答', '男性', '女性']} value={sex} onChange={(v) => setSex(v as typeof sex)} />
+        <Text style={shared.hint}>寿命の予測（平均余命）にだけ使います。未回答なら男女平均で計算します。</Text>
         <MetricCard icon="💴" tint="#e6f6f1" label="年収(額面)" value={incomeMan} unit="万円" min={0} max={1500} step={10} onChange={setIncomeMan} />
         <MetricCard icon="🐷" tint="#fdf2dc" label="今の金融資産" value={assetsMan} unit="万円" min={0} max={5000} step={50} onChange={setAssetsMan} />
         <MetricCard icon="🛒" tint="#fbe9e7" label="毎月の支出" value={monthlyExpenseMan} unit="万円" min={0} max={60} onChange={setMonthlyExpenseMan} />
 
         <Text style={shared.section}>🔮 これからの想定</Text>
         <MetricCard icon="🏖️" tint="#e8f2fb" label="退職する年齢" value={retirementAge} unit="歳" min={40} max={90} onChange={setRetirementAge} />
-        <MetricCard icon="⏳" tint="#eef0f3" label="貯蓄を使う年数(N)" value={yearsN} unit="年" min={1} max={60} onChange={setYearsN} />
         <ChoiceCard icon="🏛️" tint="#e6f6f1" label="年金の種類" options={['厚生年金', '国民年金のみ']} value={pensionType} onChange={(v) => setPensionType(v as never)} />
         <ChoiceCard icon="💼" tint="#fdf2dc" label="退職後にパートで働く" options={['働かない', '働く']} value={partTime ? '働く' : '働かない'} onChange={(v) => setPartTime(v === '働く')} />
         {partTime && <MetricCard icon="💴" tint="#e6f6f1" label="パートの年収" value={partTimeMan} unit="万/年" min={0} max={400} step={10} onChange={setPartTimeMan} />}

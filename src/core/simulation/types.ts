@@ -7,6 +7,9 @@
  * - 金額の単位は「円」で統一する(Notion DB は万円なので、取り込み境界で ×10000 する)。
  */
 
+/** 性別(任意入力)。平均余命の参照に使う。未回答(undefined)は男女平均 */
+export type Sex = '男性' | '女性';
+
 /** イベントの計算区分(Notion DB「計算区分」に対応) */
 export type CalcKind =
   | '毎年支出' // 開始年齢から毎年一定額が乗り続ける
@@ -105,9 +108,19 @@ export interface SimulationInput {
   monthlySavingsYen: number;
   /** 退職年齢(既定 DEFAULT_RETIREMENT_AGE)。現役の年次ループはこの年齢で止める */
   retirementAge: number;
+  /** 性別(任意)。予測寿命(平均余命)の参照に使う。未回答なら男女平均 */
+  sex?: Sex;
+  /**
+   * 試算の基準年(西暦)。寿命の伸び(社人研推計)をどの年から数えるか。
+   * 既定は実行時の年。テストで結果を固定したい時に指定する
+   */
+  baseCalendarYear?: number;
   /** 年金の種類(未指定なら '厚生年金')。受給額が決まる(SPEC §3.7) */
   pensionType?: '国民年金のみ' | '厚生年金';
-  /** 退職後に貯蓄を使う年数 N(自由入力レバー・既定 DEFAULT_YEARS_TO_SPEND_SAVINGS)。死ぬ年齢は入力しない */
+  /**
+   * 退職後に貯蓄を使う年数 N(閉じた式用)。死ぬ年齢は入力しない。
+   * 未指定なら「退職〜予測寿命」の年数を使う(ADR: 20260703-spend-down-projection)
+   */
   yearsToSpendSavings?: number;
   /** 基本消費の出どころ(未指定なら { kind: 'fromSavings' }) */
   consumptionBasis?: ConsumptionBasis;
@@ -189,6 +202,27 @@ export interface RetirementOutput {
   annualFreeSpendingYen: number;
 }
 
+/**
+ * 退職後の「使い切り」ビュー(ADR: 20260703-spend-down-projection)。
+ * 問いを「足りるか?」から「寿命までに使い切れるか?」へ反転させる中核の出力。
+ */
+export interface SpendDownOutput {
+  /**
+   * 'spendDown' = 使い切り線(年間◯円ずつ使うと予測寿命でちょうどゼロ着地)。
+   * 'shortage' = 使い切りペースでも最低生活費を下回る(従来の枯渇ビュー＋改善提案へ)
+   */
+  mode: 'spendDown' | 'shortage';
+  /** 予測寿命(歳)。グラフの終端(平均余命＋寿命の伸び。出所は life-expectancy.ts) */
+  predictedLifeAge: number;
+  /** 退職〜予測寿命の年数 */
+  yearsInRetirement: number;
+  /**
+   * 予測寿命でちょうど使い切る場合の退職後の年間支出額(円)。
+   * 年金＋パート＋貯蓄取り崩し＋運用益を含めて二分探索で解く
+   */
+  annualSpendableYen: number;
+}
+
 export interface SimulationResult {
   /** 現役期(現在年齢〜退職年齢)の年次推移 */
   years: YearProjection[];
@@ -198,4 +232,6 @@ export interface SimulationResult {
   retirementYearsOfLivingCost: number;
   /** 退職後(N年レバーの閉じた式) */
   retirement: RetirementOutput;
+  /** 退職後の使い切りビュー(寿命ゴール・使い切りペース) */
+  spendDown: SpendDownOutput;
 }

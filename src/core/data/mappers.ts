@@ -11,8 +11,8 @@ import type { EventRow, Snapshot } from './snapshot';
 const manToYen = (man: number | null | undefined): number | null =>
   man == null ? null : Math.round(man * MAN);
 
-/** 単調増加の (x, y) 点列を線形補間。範囲外は端でクランプ */
-function interpolate(points: { x: number; y: number }[], x: number): number {
+/** 単調増加の (x, y) 点列を線形補間。範囲外は端でクランプ(life-expectancy と共用) */
+export function interpolate(points: { x: number; y: number }[], x: number): number {
   const pts = [...points].sort((a, b) => a.x - b.x);
   if (pts.length === 0) return 0;
   if (x <= pts[0].x) return pts[0].y;

@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { predictedLifeAge } from '../data/life-expectancy';
 import { buildAssumptions } from '../data/mappers';
 import { SNAPSHOT } from '../data/snapshot';
 import { simulate, solvePresentMonthlyHeadroomYen } from './simulate';
@@ -15,7 +16,7 @@ const MAN = 10000;
 const assumptions = buildAssumptions(SNAPSHOT);
 const emptyScenario: Scenario = { id: 't', name: 'test', events: [] };
 
-/** 標準ペルソナ(賃貸・年収500・資産200・月22万支出・家賃8万) */
+/** 標準ペルソナ(賃貸・年収500・資産200・月22万支出・家賃8万)。基準年は固定して結果を安定させる */
 function baseInput(over: Partial<SimulationInput> = {}): SimulationInput {
   return {
     currentAge: 28,
@@ -25,6 +26,7 @@ function baseInput(over: Partial<SimulationInput> = {}): SimulationInput {
     retirementAge: 65,
     pensionType: '厚生年金',
     yearsToSpendSavings: 30,
+    baseCalendarYear: 2026,
     consumptionBasis: { kind: 'explicit', annualYen: 22 * 12 * MAN },
     currentRentYen: 8 * 12 * MAN,
     housingPlan: { kind: '賃貸' },
@@ -44,11 +46,62 @@ test('固定費は 0 以上 消費以下（賃貸・現役）', () => {
   }
 });
 
-test('退職後は固定費＝消費（最低生活費は全額必須・線が重なる）', () => {
+test('退職後の固定費＝最低生活費（使い切りモードでは消費との差が自由に使えるお金）', () => {
   const r = simulate(baseInput(), emptyScenario, assumptions);
+  const minLiving = assumptions.minimumLivingCostRetirementYen;
   for (const y of r.years.filter((y) => y.age >= 65)) {
-    assert.equal(y.fixedCostYen, y.consumptionYen, `age ${y.age}: 退職後に乖離`);
+    assert.ok(y.fixedCostYen <= y.consumptionYen + 1, `age ${y.age}: fixed>消費`);
+    assert.ok(y.fixedCostYen <= minLiving + 1, `age ${y.age}: fixed>最低生活費`);
   }
+});
+
+test('予測寿命: 男<女・未回答は男女平均・退職を遅らすと寿命の伸びも増える', () => {
+  // 30歳・退職65歳・基準2026年: 平均余命(令和6年簡易生命表) + 伸び(社人研中位)×(2061-2024)
+  assert.equal(predictedLifeAge(30, '男性', 65, 2026), 85);
+  assert.equal(predictedLifeAge(30, '女性', 65, 2026), 91);
+  assert.equal(predictedLifeAge(30, undefined, 65, 2026), 88);
+  // 退職が遅いほど「退職を迎える年」が先になり、織り込む伸びが増える(単調非減少)
+  assert.ok(predictedLifeAge(30, '男性', 80, 2026) >= predictedLifeAge(30, '男性', 50, 2026));
+});
+
+test('使い切りモード: 標準ペルソナは寿命でちょうどゼロ着地する使い切り線になる', () => {
+  const r = simulate(baseInput(), emptyScenario, assumptions);
+  const sd = r.spendDown;
+  assert.equal(sd.mode, 'spendDown');
+  assert.ok(sd.annualSpendableYen >= assumptions.minimumLivingCostRetirementYen, '使い切り額<最低生活費');
+  // グラフの終端＝予測寿命、終端資産はほぼゼロ(使い切り)
+  const last = r.years[r.years.length - 1];
+  assert.equal(last.age, sd.predictedLifeAge);
+  assert.ok(last.assetsYen >= 0 && last.assetsYen < 1000, `終端資産がゼロ近傍でない: ${last.assetsYen}`);
+  // 退職後の消費線＝使い切りペース
+  for (const y of r.years.filter((y) => y.age >= 65)) {
+    assert.ok(Math.abs(y.consumptionYen - sd.annualSpendableYen) < 1, `age ${y.age}: 消費が使い切り額でない`);
+  }
+});
+
+test('不足モード: 使い切りペースが最低生活費未満なら従来の枯渇ビューに切り替わる', () => {
+  const input = baseInput({
+    grossAnnualIncomeYen: 250 * MAN,
+    currentAssetsYen: 0,
+    consumptionBasis: { kind: 'explicit', annualYen: 24 * 12 * MAN },
+    pensionType: '国民年金のみ',
+  });
+  const r = simulate(input, emptyScenario, assumptions);
+  const sd = r.spendDown;
+  assert.equal(sd.mode, 'shortage');
+  assert.ok(sd.annualSpendableYen < assumptions.minimumLivingCostRetirementYen);
+  // 従来どおり最低生活費で取り崩し、尽きる年を1つ見せて打ち切る
+  const retired = r.years.filter((y) => y.age >= 65);
+  for (const y of retired) assert.equal(y.consumptionYen, assumptions.minimumLivingCostRetirementYen);
+  const last = r.years[r.years.length - 1];
+  assert.ok(last.assetsYen < 0, '枯渇の年で終わっていない');
+  assert.ok(last.age <= sd.predictedLifeAge);
+});
+
+test('使い切り額は資産が多いほど増える(単調性)', () => {
+  const lo = simulate(baseInput({ currentAssetsYen: 100 * MAN }), emptyScenario, assumptions).spendDown.annualSpendableYen;
+  const hi = simulate(baseInput({ currentAssetsYen: 2000 * MAN }), emptyScenario, assumptions).spendDown.annualSpendableYen;
+  assert.ok(hi > lo, `hi=${hi} lo=${lo}`);
 });
 
 test('固定費＝住居費＋(非住居×0.55) を満たす（賃貸・初年度）', () => {

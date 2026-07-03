@@ -51,10 +51,21 @@ export function ResultView({
   setCareHomeAge: (n: number) => void;
 }) {
   const rt = result.retirement;
-  const free = rt.annualFreeSpendingYen;
-  const hasRoom = free >= 0;
+  const sd = result.spendDown;
+  // 余裕あり/なしは使い切りビューのモードで判定（使い切りペース額 ≥ 最低生活費）
+  const hasRoom = sd.mode === 'spendDown';
   const ages = result.years.map((y) => y.age);
   const retireIdx = ages.indexOf(goalAge); // 退職年齢のグラフ上の位置（縦線マーカー用）
+  const lifeIdx = ages.indexOf(sd.predictedLifeAge); // 予測寿命の位置（枯渇で早く終わると -1=非表示）
+  const markers = [
+    { index: retireIdx, label: '退職' },
+    { index: lifeIdx, label: `予測寿命 ${sd.predictedLifeAge}歳` },
+  ];
+  // 体感変換: 使い切りペースの月額が「今の生活費の何倍」か
+  const spendMonthlyYen = sd.annualSpendableYen / 12;
+  const spendMultiple = currentMonthlyExpenseYen > 0 ? spendMonthlyYen / currentMonthlyExpenseYen : 0;
+  // 退職後の自由額は hasRoom と同じ使い切り基準で出す(閉じた式の free は運用益を含まず境界域で符号がズレる)
+  const retireFreeMonthlyYen = Math.max(0, (sd.annualSpendableYen - rt.minimumLivingCostAnnualYen) / 12);
   // グラフ幅は画面に合わせる（content padding 20×2 ＋ chartCard padding 12×2 を差し引く。上限560）
   const { width: winW } = useWindowDimensions();
   const chartW = Math.max(240, Math.min(winW, 560) - 64);
@@ -77,27 +88,47 @@ export function ResultView({
           <GradientText text="あなたの未来" fontSize={28} />
         </View>
 
-        <LinearGradient
-          colors={hasRoom ? ['#2bbf9e', '#0ea98e'] : ['#f4a07a', '#ef7d6f']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}
-        >
-          <Text style={styles.heroLabel}>退職時の貯蓄</Text>
-          <Text style={styles.heroValue}>{yen(result.assetsAtRetirementYen)}</Text>
-          <Text style={styles.heroTaikan}>今の生活費なら 約{Math.round(result.retirementYearsOfLivingCost)}年分</Text>
-          <Text style={styles.heroNote}>
-            年金 {monthlyYen(rt.pensionAnnualYen)}/月 ・ 最低生活費 {monthlyYen(rt.minimumLivingCostAnnualYen)}/月
-          </Text>
-        </LinearGradient>
+        {hasRoom ? (
+          <LinearGradient
+            colors={['#2bbf9e', '#0ea98e']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.hero}
+          >
+            <Text style={styles.heroLabel}>退職後、寿命（予測 {sd.predictedLifeAge}歳）までに使い切るなら</Text>
+            <Text style={styles.heroValue}>月 {monthlyYen(sd.annualSpendableYen)}</Text>
+            <Text style={styles.heroTaikan}>
+              今の生活費の 約{spendMultiple.toFixed(1)}倍 ・ 年 {yen(sd.annualSpendableYen)} — 使い切れますか？
+            </Text>
+            <Text style={styles.heroNote}>
+              退職時の貯蓄 {yen(result.assetsAtRetirementYen)}（今の生活費なら 約{Math.round(result.retirementYearsOfLivingCost)}年分）・ 年金 {monthlyYen(rt.pensionAnnualYen)}/月
+            </Text>
+          </LinearGradient>
+        ) : (
+          <LinearGradient
+            colors={['#f4a07a', '#ef7d6f']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.hero}
+          >
+            <Text style={styles.heroLabel}>退職時の貯蓄</Text>
+            <Text style={styles.heroValue}>{yen(result.assetsAtRetirementYen)}</Text>
+            <Text style={styles.heroTaikan}>今の生活費なら 約{Math.round(result.retirementYearsOfLivingCost)}年分</Text>
+            <Text style={styles.heroNote}>
+              年金 {monthlyYen(rt.pensionAnnualYen)}/月 ・ 最低生活費 {monthlyYen(rt.minimumLivingCostAnnualYen)}/月
+            </Text>
+          </LinearGradient>
+        )}
 
         <Text style={shared.note}>
-          {coveredByPension
-            ? '年金だけで最低生活はまかなえます。貯蓄はまるごと使える分です。'
-            : `年金で足りない分を貯蓄で補うと、最低生活なら 約${yearsAtMinimum}年分 もちます。`}
+          {hasRoom
+            ? `毎月 ${monthlyYen(sd.annualSpendableYen)} ずつ使うと、予測寿命の${sd.predictedLifeAge}歳でちょうど使い切る計算です。使い切れなかった分は、そのまま遺ります。`
+            : coveredByPension
+              ? '年金で最低生活はまかなえますが、退職後の大きな出費（介護・大病など）の分だけ貯蓄が足りない見込みです。'
+              : `年金で足りない分を貯蓄で補うと、最低生活なら 約${Math.max(0, yearsAtMinimum)}年分 もちます。`}
         </Text>
         <Text style={shared.hint}>
-          ※最低生活費は、家計調査「65歳以上・単身無職世帯」の平均消費支出（食料・住居・光熱・保健医療・通信など生活全般）に基づく概算です。
+          ※予測寿命は、令和6年簡易生命表の平均余命に将来の寿命の伸び（社人研 将来推計・中位仮定）を織り込んだ平均です。性別未回答なら男女平均。最低生活費は、家計調査「65歳以上・単身無職世帯」の平均消費支出に基づく概算です。
         </Text>
 
         <SectionTitle
@@ -117,15 +148,14 @@ export function ResultView({
 
         <SectionTitle
           title="📈 収入・支出の推移（生涯）"
-          info="収入の計算: 額面年収を起点に、年齢別の昇給カーブ（賃金センサス令和7年・実質）で伸ばし、税・社会保険料を引いて手取りにします（例: 額面400万→手取り約320万）。退職後は年金（種類別）＋パートに切り替え。昇給率は実質で、物価上昇は考慮しません（現在価値）。消費＝基本生活費＋選んだライフイベント費（子供・住宅・ペット等）の実支出。一回きりの費用（大病・結婚式・頭金など）はその年に上乗せ（スパイク）して表示します。固定費＝住居費＋生活必須費＋イベント費（コミット分）。消費線と固定費線の差が、いま自由に使えているお金（裁量の娯楽費）です。縦の点線が退職＝ここから収入が年金＋パートに切り替わります。"
+          info="収入の計算: 額面年収を起点に、年齢別の昇給カーブ（賃金センサス令和7年・実質）で伸ばし、税・社会保険料を引いて手取りにします（例: 額面400万→手取り約320万）。退職後は年金（種類別）＋パートに切り替え。昇給率は実質で、物価上昇は考慮しません（現在価値）。消費＝基本生活費＋選んだライフイベント費（子供・住宅・ペット等）の実支出。一回きりの費用（大病・結婚式・頭金など）はその年に上乗せ（スパイク）して表示します。固定費＝住居費＋生活必須費＋イベント費（コミット分）。消費線と固定費線の差が、いま自由に使えているお金（裁量の娯楽費）です。退職後の消費線は、余裕があれば「寿命までに使い切るペース」の金額＝使っていい額になります。縦の点線が退職と予測寿命です。"
         />
         <View style={styles.chartCard}>
           <LineChart
             width={chartW}
             height={190}
             xLabels={ages.map((a) => `${a}歳`)}
-            markerIndex={retireIdx}
-            markerLabel="退職"
+            markers={markers}
             bands={[
               {
                 upper: result.years.map((y) => y.consumptionYen + y.eventAnnualYen + y.eventOneTimeYen),
@@ -145,16 +175,15 @@ export function ResultView({
         </View>
 
         <SectionTitle
-          title="📊 資産の推移（生涯）"
-          info="消費の計算: 入力した毎月の支出を基準に、家計調査の年齢別消費カーブで増減（現役はほぼ横ばい、60歳で約−14%、以降微減）。物価は考慮しません（現在価値）。退職後は最低生活費（約14.9万/月＝家計調査 高齢単身無職）で取り崩し。資産＝毎年「手取り−消費−イベント＋運用益」を積み上げ、退職後は年金で足りない分を貯蓄から取り崩します。縦の点線が退職＝ここから資産が減りはじめます。"
+          title="📊 資産の推移（寿命まで）"
+          info="資産＝毎年「手取り−消費−イベント＋運用益」の積み上げ。物価は考慮しません（現在価値）。グラフのゴールは予測寿命（平均余命＋将来の寿命の伸び）。退職後は、余裕があれば「寿命でちょうどゼロに着地する使い切りペース」で取り崩す線＝下りながらゴールでゼロに着く形になります。使い切りペースが最低生活費（約14.9万/月＝家計調査 高齢単身無職）に届かない場合は、最低生活費で取り崩して資金が尽きる年まで描きます。縦の点線が退職と予測寿命です。"
         />
         <View style={styles.chartCard}>
           <LineChart
             width={chartW}
             height={190}
             xLabels={ages.map((a) => `${a}歳`)}
-            markerIndex={retireIdx}
-            markerLabel="退職"
+            markers={markers}
             series={[
               { label: '資産', color: '#0ea98e', kind: 'area', values: result.years.map((y) => y.assetsYen) },
             ]}
@@ -191,7 +220,7 @@ export function ResultView({
             hasRoom={hasRoom}
             presentHeadroomMonthlyYen={presentHeadroomMonthlyYen}
             currentMonthlyExpenseYen={currentMonthlyExpenseYen}
-            retirementFreeMonthlyYen={free / 12}
+            retirementFreeMonthlyYen={retireFreeMonthlyYen}
             reflection={reflection}
           />
         )}
@@ -201,9 +230,10 @@ export function ResultView({
           <Text style={shared.note}>・収入: 額面年収を起点に、年齢別の昇給カーブ（賃金センサス・実質）で伸ばし、税・社会保険料を引いて手取りにします（例: 額面400万→手取り約320万）。</Text>
           <Text style={shared.note}>・消費: 入力した「毎月の支出」を基準に、家計調査の年齢別カーブで増減（現役はほぼ横ばい、退職後は減）。</Text>
           <Text style={shared.note}>・ライフイベント: 選んだ項目の年額／一回費用を加算（出所＝家計調査・各種統計）。住宅は賃貸→購入で家賃を維持費＋ローンに置換。</Text>
-          <Text style={shared.note}>・退職後: 収入＝年金（国民 約5.9万／厚生 約15.1万・月）＋パート。支出＝最低生活費（約14.9万/月＝家計調査 高齢単身無職）。不足は貯蓄を取り崩し、資産が尽きるまで描きます。</Text>
+          <Text style={shared.note}>・予測寿命: 令和6年簡易生命表の平均余命（性別未回答は男女平均）に、退職を迎える年までの寿命の伸び（社人研 将来推計人口・令和5年推計 死亡中位）を織り込んだ概算。グラフの終端です。</Text>
+          <Text style={shared.note}>・退職後: 収入＝年金（国民 約5.9万／厚生 約15.1万・月）＋パート。余裕がある場合は「予測寿命でちょうど使い切る年間支出」（運用益込みで逆算）で取り崩し、寿命でゼロに着地する線を描きます。使い切りペースが最低生活費（約14.9万/月＝家計調査 高齢単身無職）に届かない場合は、最低生活費で取り崩し資産が尽きるまで描きます。</Text>
           <Text style={shared.note}>・積立投資: 退職まで毎月積み立て、実質利回り約2.5%（GPIF設立来+4.71%−物価）で複利運用。</Text>
-          <Text style={shared.hint}>出所: 賃金構造基本統計調査／家計調査／厚労省 年金事業概況／GPIF／国立成育医療研究センター ほか。</Text>
+          <Text style={shared.hint}>出所: 賃金構造基本統計調査／家計調査／厚労省 年金事業概況・簡易生命表／社人研 将来推計人口／GPIF／国立成育医療研究センター ほか。</Text>
           <Text style={shared.hint}>限界: 「平均どおりに進めば」の1本線で、確率や個人の振れ（テールリスク）は表現しません。年齢別データは“ある時点の断面”（合成コホート）で、同一個人の生涯推移ではありません。</Text>
         </Accordion>
 

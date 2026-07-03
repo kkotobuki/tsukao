@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Line, Path, Rect, Svg, Text as SvgText } from 'react-native-svg';
 
@@ -41,6 +42,12 @@ function smoothPath(pts: [number, number][]): string {
   return d;
 }
 
+/** 縦の目印線。index は values 配列上の位置。例: 退職・予測寿命 */
+export interface Marker {
+  index: number;
+  label?: string;
+}
+
 /** 年次の折れ線グラフ(svg)。複数系列を重ね、桁の違う系列は右の第2軸で描ける */
 export function LineChart({
   series,
@@ -48,17 +55,14 @@ export function LineChart({
   width = 320,
   height = 180,
   bands = [],
-  markerIndex,
-  markerLabel,
+  markers = [],
 }: {
   series: Series[];
   xLabels: string[];
   width?: number;
   height?: number;
   bands?: Band[];
-  /** 縦の目印線を引く位置（values 配列のインデックス）。例: 退職年齢 */
-  markerIndex?: number;
-  markerLabel?: string;
+  markers?: Marker[];
 }) {
   const hasRight = series.some((s) => s.axis === 'right') || bands.some((b) => b.axis === 'right');
   const pad = { l: 44, r: hasRight ? 40 : 6, t: 12, b: 18 };
@@ -120,24 +124,34 @@ export function LineChart({
         ))}
         <Line x1={pad.l} y1={L.y(0)} x2={pad.l + w} y2={L.y(0)} stroke="#d6dde2" strokeWidth={1} />
 
-        {markerIndex != null && markerIndex >= 0 && (
-          <>
-            <Line
-              x1={x(markerIndex)}
-              y1={pad.t}
-              x2={x(markerIndex)}
-              y2={pad.t + h}
-              stroke="#e0b75e"
-              strokeWidth={1.5}
-              strokeDasharray="4 3"
-            />
-            {markerLabel ? (
-              <SvgText x={x(markerIndex)} y={pad.t + 8} fill="#b9760a" fontSize={9} fontWeight="700" textAnchor="middle">
-                {markerLabel}
-              </SvgText>
-            ) : null}
-          </>
-        )}
+        {markers
+          .filter((m) => m.index >= 0 && m.index < len)
+          .map((m) => (
+            <Fragment key={`marker-${m.index}`}>
+              <Line
+                x1={x(m.index)}
+                y1={pad.t}
+                x2={x(m.index)}
+                y2={pad.t + h}
+                stroke="#e0b75e"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
+              {m.label ? (
+                <SvgText
+                  x={x(m.index)}
+                  y={pad.t + 8}
+                  fill="#b9760a"
+                  fontSize={9}
+                  fontWeight="700"
+                  // 右端近くのラベル（予測寿命など）は左へ流してはみ出しを防ぐ
+                  textAnchor={m.index > n * 0.85 ? 'end' : 'middle'}
+                >
+                  {m.label}
+                </SvgText>
+              ) : null}
+            </Fragment>
+          ))}
 
         {/* エリア塗り（なめらかな上辺＋ベースラインまで閉じる） */}
         {series
