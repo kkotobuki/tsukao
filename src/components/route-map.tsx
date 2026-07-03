@@ -11,7 +11,8 @@ export interface Waypoint {
 
 /**
  * 人生ルート図（Google Maps の経路案内風）。
- * 下＝現在地（いま）→ 上＝ゴール（退職）へ伸びる1本道に、ライフイベントを経由地ピンで配置する。
+ * 上＝現在地（いま）→ 下＝ゴール（退職）へ伸びる1本道に、ライフイベントを経由地ピンで配置する
+ * （スタートを上にして読み順＝時間順に揃える）。
  * スコア・順位・勝敗は持たない（GPSの「現在地→目的地」案内のメタファーのみ）。
  */
 export function RouteMap({
@@ -50,14 +51,14 @@ export function RouteMap({
   });
   const cum = gaps.reduce<number[]>((acc, g) => [...acc, acc[acc.length - 1] + g], [0]); // 累積（i=0 が 0）
   const H = padTop + padBot + (cum[cum.length - 1] ?? 0);
-  // y: i=0(いま)を下に、最後(ゴール/最年長)を上に。
-  const yOf = (i: number) => H - padBot - cum[i];
+  // y: i=0(いま)を上に、最後(ゴール/最年長)を下に（スタートが上）。
+  const yOf = (i: number) => padTop + cum[i];
 
   const baseX = 34;
   const wiggle = (i: number) => Math.sin((i / Math.max(1, nodes.length - 1)) * Math.PI * 3) * 9;
   const xOf = (i: number) => baseX + wiggle(i);
 
-  // 道のパス（ノードを下から上へ滑らかに繋ぐ）
+  // 道のパス（ノードを上から下へ滑らかに繋ぐ）
   const pts = nodes.map((_, i) => `${xOf(i).toFixed(1)},${yOf(i).toFixed(1)}`);
   const d = `M ${pts.join(' L ')}`;
 

@@ -11,6 +11,8 @@ export function Accordion({
   summary,
   active,
   info,
+  expanded,
+  onToggle,
   children,
 }: {
   title: string;
@@ -18,14 +20,22 @@ export function Accordion({
   summary?: string;
   active?: boolean;
   info?: string; // ⓘ で開く「算出根拠・出所」（Notion由来）
+  /** 制御モード: 開閉を親が持つ（「開いた＝ON登録」のオプションに使う）。未指定なら内部stateで開閉 */
+  expanded?: boolean;
+  onToggle?: (open: boolean) => void;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = expanded ?? openState;
+  const toggle = () => {
+    if (expanded == null) setOpenState(!open);
+    onToggle?.(!open);
+  };
   const [infoOpen, setInfoOpen] = useState(false);
   return (
     <View style={[styles.acc, active && styles.accActive]}>
       <View style={styles.accHead}>
-        <Pressable onPress={() => setOpen((o) => !o)} style={styles.accHeadMain}>
+        <Pressable onPress={toggle} style={styles.accHeadMain}>
           <View style={styles.accTitleWrap}>
             {icon ? (
               <View style={styles.accIcon}>

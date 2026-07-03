@@ -1,16 +1,16 @@
+import { predictedLifeAge } from '../data/life-expectancy';
 import type {
   Assumptions,
   PlacedEvent,
   Scenario,
   SimulationInput,
   SimulationResult,
+  SpendDownOutput,
   YearProjection,
 } from './types';
 
 /** 退職年齢の既定値 */
 export const DEFAULT_RETIREMENT_AGE = 65;
-/** 退職後に貯蓄を使う年数 N の既定値(SPEC §4.3) */
-export const DEFAULT_YEARS_TO_SPEND_SAVINGS = 30;
 
 /**
  * 平均一本線シミュレーション(純粋関数・現在価値)。
@@ -29,9 +29,16 @@ export function simulate(
   input: SimulationInput,
   scenario: Scenario,
   assumptions: Assumptions,
+  // headroomEvalOnly: 閉じた式(retirement)だけ必要な再帰評価(許可ソルバ)向けに、
+  // 退職後チャートと使い切り二分探索を省略する内部オプション。spendDown と退職後の years は計算されない
+  opts: { headroomEvalOnly?: boolean } = {},
 ): SimulationResult {
   const { currentAge, retirementAge } = input;
-  const N = input.yearsToSpendSavings ?? DEFAULT_YEARS_TO_SPEND_SAVINGS;
+  // 予測寿命＝グラフのゴール(ADR: 20260703-spend-down-projection)。死ぬ年齢は入力せず統計から予測
+  const lifeAge = predictedLifeAge(currentAge, input.sex, retirementAge, input.baseCalendarYear);
+  const yearsInRetirement = lifeAge - retirementAge;
+  // 閉じた式の N は未指定なら「退職〜予測寿命」＝残りの年数で割る
+  const N = input.yearsToSpendSavings ?? yearsInRetirement;
   const baseConsumptionYen = resolveBaseConsumptionYen(input, assumptions);
   const housingPlan = input.housingPlan ?? { kind: '賃貸' };
   const currentRentYen = input.currentRentYen ?? 0;
@@ -139,42 +146,59 @@ export function simulate(
   const partTimeAnnualYen = input.retirementPartTimeYen ?? 0;
   const minimumLivingCostAnnualYen = assumptions.minimumLivingCostRetirementYen;
 
-  // 退職後の資産推移(チャート用)。最低生活費で取り崩し、年金＋パートで賄い、不足は貯蓄から。
-  // もしも(大病・介護施設など退職後イベント)も反映。死ぬ年齢は入力しないので、
-  // 資金が尽きる or 100歳で打ち切る(尽きる年を1つ見せて終了)。
-  const CHART_CAP_AGE = 100;
-  for (let age = retirementAge; age <= CHART_CAP_AGE; age++) {
-    const netIncomeYen = pensionAnnualYen + partTimeAnnualYen;
-    const consumptionYen = minimumLivingCostAnnualYen;
-    const ev = sumEventCosts(scenario.events, age);
-    const investmentReturnYen = investedYen * assumptions.realInvestmentReturnRate;
-    investedYen += investmentReturnYen;
-    let yearCashYen = cashYen + netIncomeYen - consumptionYen - ev.eventAnnualYen - ev.eventOneTimeYen;
-    let withdrawnYen = 0;
-    if (yearCashYen < 0) {
-      withdrawnYen = Math.min(-yearCashYen, investedYen);
-      yearCashYen += withdrawnYen;
-      investedYen -= withdrawnYen;
+  // 使い切りビュー: 「予測寿命でちょうど使い切る年間支出額」を二分探索で解く。
+  // 支出を増やすほど寿命時点の資産は単調に減るので、終端資産 ≥ 0 を保つ最大の支出が解。
+  // 年金＋パート・退職後イベント・投資ポットの運用益をすべて含めたまま解ける
+  let annualSpendableYen = 0;
+  let mode: SpendDownOutput['mode'] = 'shortage';
+  if (!opts.headroomEvalOnly) {
+    const retireIncomeYen = pensionAnnualYen + partTimeAnnualYen;
+    const finalAssetsAt = (annualSpendYen: number): number =>
+      projectRetirement({
+        cashYen,
+        investedYen,
+        retirementAge,
+        endAge: lifeAge,
+        netIncomeYen: retireIncomeYen,
+        consumptionYen: annualSpendYen,
+        fixedCostYen: Math.min(annualSpendYen, minimumLivingCostAnnualYen),
+        events: scenario.events,
+        returnRate: assumptions.realInvestmentReturnRate,
+        stopWhenDepleted: false,
+        collectYears: false, // 探索中は終端資産だけ要る(年次配列の生成を省いて GC 圧を抑える)
+      }).finalAssetsYen;
+    let spendLo = 0;
+    let spendHi = pensionAnnualYen + partTimeAnnualYen + Math.max(assetsAtRetirementYen, 1);
+    for (let i = 0; i < 20 && finalAssetsAt(spendHi) >= 0; i++) spendHi *= 2;
+    // 40回で区間は 2^40 分の1 ≒ 円未満の精度(表示は千円/万円丸め)
+    for (let i = 0; i < 40; i++) {
+      const mid = (spendLo + spendHi) / 2;
+      if (finalAssetsAt(mid) >= 0) spendLo = mid;
+      else spendHi = mid;
     }
-    cashYen = yearCashYen;
-    const assetsYen = cashYen + investedYen;
-    years.push({
-      age,
-      grossIncomeYen: netIncomeYen, // 退職後の年収＝年金＋パート（v1は年金非課税扱いで額面≈手取り）
-      netIncomeYen,
-      consumptionYen,
-      fixedCostYen: consumptionYen, // 退職後は最低生活費=全額が必須(固定費線は消費線に重なる)
-      eventAnnualYen: ev.eventAnnualYen,
-      eventOneTimeYen: ev.eventOneTimeYen,
-      annualInvestmentYen: 0,
-      investmentReturnYen,
-      withdrawnYen,
+    annualSpendableYen = spendLo;
+    mode = annualSpendableYen >= minimumLivingCostAnnualYen ? 'spendDown' : 'shortage';
+
+    // 退職後の資産推移(チャート用)。2モード:
+    //  - spendDown: 使い切りペースで支出し、予測寿命でちょうどゼロに着地する線
+    //  - shortage: 従来どおり最低生活費で取り崩し、資金が尽きる年で打ち切る(尽きる年を1つ見せる)
+    const retire = projectRetirement({
+      cashYen,
       investedYen,
-      netFlowYen:
-        netIncomeYen - consumptionYen - ev.eventAnnualYen - ev.eventOneTimeYen + investmentReturnYen,
-      assetsYen,
+      retirementAge,
+      endAge: lifeAge,
+      netIncomeYen: retireIncomeYen,
+      consumptionYen: mode === 'spendDown' ? annualSpendableYen : minimumLivingCostAnnualYen,
+      // 固定費(必須分)は最低生活費まで。spendDown では消費との差が「自由に使えるお金」になる
+      fixedCostYen: Math.min(
+        mode === 'spendDown' ? annualSpendableYen : minimumLivingCostAnnualYen,
+        minimumLivingCostAnnualYen,
+      ),
+      events: scenario.events,
+      returnRate: assumptions.realInvestmentReturnRate,
+      stopWhenDepleted: mode === 'shortage',
     });
-    if (assetsYen < 0) break;
+    years.push(...retire.years);
   }
 
   // 退職後に置いたイベント(介護・大病等)は退職時貯蓄から先に差し引く
@@ -199,7 +223,75 @@ export function simulate(
       savingsPerYearYen,
       annualFreeSpendingYen,
     },
+    spendDown: {
+      mode,
+      predictedLifeAge: lifeAge,
+      yearsInRetirement,
+      annualSpendableYen,
+    },
   };
+}
+
+/**
+ * 退職後の年次推移(retirementAge → endAge)。毎年 consumptionYen を使い、年金等 netIncomeYen で賄い、
+ * 不足は投資ポット→現金の順で取り崩す。stopWhenDepleted なら資産がマイナスになった年で打ち切る(1年見せる)。
+ * 使い切り額の二分探索(終端資産の評価)と、チャート用の本描画の両方から呼ぶ純関数。
+ */
+function projectRetirement(opts: {
+  cashYen: number;
+  investedYen: number;
+  retirementAge: number;
+  endAge: number;
+  netIncomeYen: number;
+  consumptionYen: number;
+  fixedCostYen: number;
+  events: PlacedEvent[];
+  returnRate: number;
+  stopWhenDepleted: boolean;
+  /** false で年次配列の生成を省略(終端資産だけ要る二分探索用)。既定 true */
+  collectYears?: boolean;
+}): { years: YearProjection[]; finalAssetsYen: number } {
+  let cashYen = opts.cashYen;
+  let investedYen = opts.investedYen;
+  const collectYears = opts.collectYears ?? true;
+  const years: YearProjection[] = [];
+  let finalAssetsYen = cashYen + investedYen;
+  for (let age = opts.retirementAge; age <= opts.endAge; age++) {
+    const ev = sumEventCosts(opts.events, age);
+    const investmentReturnYen = investedYen * opts.returnRate;
+    investedYen += investmentReturnYen;
+    let yearCashYen =
+      cashYen + opts.netIncomeYen - opts.consumptionYen - ev.eventAnnualYen - ev.eventOneTimeYen;
+    let withdrawnYen = 0;
+    if (yearCashYen < 0) {
+      withdrawnYen = Math.min(-yearCashYen, investedYen);
+      yearCashYen += withdrawnYen;
+      investedYen -= withdrawnYen;
+    }
+    cashYen = yearCashYen;
+    const assetsYen = cashYen + investedYen;
+    if (collectYears) {
+      years.push({
+        age,
+        grossIncomeYen: opts.netIncomeYen, // 退職後の年収＝年金＋パート（v1は年金非課税扱いで額面≈手取り）
+        netIncomeYen: opts.netIncomeYen,
+        consumptionYen: opts.consumptionYen,
+        fixedCostYen: opts.fixedCostYen,
+        eventAnnualYen: ev.eventAnnualYen,
+        eventOneTimeYen: ev.eventOneTimeYen,
+        annualInvestmentYen: 0,
+        investmentReturnYen,
+        withdrawnYen,
+        investedYen,
+        netFlowYen:
+          opts.netIncomeYen - opts.consumptionYen - ev.eventAnnualYen - ev.eventOneTimeYen + investmentReturnYen,
+        assetsYen,
+      });
+    }
+    finalAssetsYen = assetsYen;
+    if (opts.stopWhenDepleted && assetsYen < 0) break;
+  }
+  return { years, finalAssetsYen };
 }
 
 /**
@@ -219,8 +311,9 @@ export function solvePresentMonthlyHeadroomYen(
 ): number {
   // 現役期間が無い(すでに退職)/ 貯蓄を使う年数 N<=0 だと、退職後の自由支出が「今の支出」に依存せず
   // 解が定まらない(freeAt が一定)。二分探索が成立しないので、上乗せ余地は出さない(0)。
-  const N = input.yearsToSpendSavings ?? DEFAULT_YEARS_TO_SPEND_SAVINGS;
-  if (input.currentAge >= input.retirementAge || N <= 0) return 0;
+  // (N 未指定は「退職〜予測寿命」で常に 1 以上なので、明示指定の 0 以下だけ弾く)
+  const N = input.yearsToSpendSavings;
+  if (input.currentAge >= input.retirementAge || (N != null && N <= 0)) return 0;
 
   const baseAnnualYen = resolveBaseConsumptionYen(input, assumptions);
   const freeAt = (extraAnnualYen: number): number =>
@@ -228,6 +321,8 @@ export function solvePresentMonthlyHeadroomYen(
       { ...input, consumptionBasis: { kind: 'explicit', annualYen: baseAnnualYen + extraAnnualYen } },
       scenario,
       assumptions,
+      // 閉じた式(retirement)しか読まないので、退職後チャートと使い切り探索は省略(スライダー操作の体感速度に直結)
+      { headroomEvalOnly: true },
     ).retirement.annualFreeSpendingYen;
 
   if (freeAt(0) < 0) return 0; // 既に退職後が不足 → 今は上乗せ余地なし
